@@ -1,0 +1,270 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public workspace profile for an authenticated MediSlot AI user (no PII).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "activePortal": { "type": "string", "enum": ["patient", "clinical"], "maxLength": 20 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "activePortal", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Strictly isolated PII document for an authenticated user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "mrn": { "type": "string", "maxLength": 40 },
+        "bloodType": { "type": "string", "maxLength": 12 },
+        "address": { "type": "string", "maxLength": 240 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "Doctor": {
+      "title": "Doctor",
+      "description": "Specialist physician listing in the MediSlot AI directory.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "title": { "type": "string", "maxLength": 120 },
+        "specialty": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "location": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "integer" },
+        "fee": { "type": "integer" },
+        "avatarUrl": { "type": "string", "maxLength": 600 },
+        "bio": { "type": "string", "maxLength": 1500 },
+        "experience": { "type": "string", "maxLength": 60 },
+        "education": { "type": "string", "maxLength": 300 },
+        "tags": { "type": "array" },
+        "slots": { "type": "array" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "name", "specialty", "location", "rating", "reviewCount", "fee", "isActive", "createdAt", "updatedAt"]
+    },
+    "DoctorProfileSettings": {
+      "title": "DoctorProfileSettings",
+      "description": "Clinician profile, billing, scheduling preferences, and security settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "credentials": { "type": "string", "maxLength": 120 },
+        "specialty": { "type": "string", "maxLength": 80 },
+        "npiNumber": { "type": "string", "maxLength": 40 },
+        "bio": { "type": "string", "maxLength": 1500 },
+        "practiceName": { "type": "string", "maxLength": 160 },
+        "clinicAddress": { "type": "string", "maxLength": 240 },
+        "consultationFee": { "type": "integer" },
+        "videoFee": { "type": "integer" },
+        "acceptedPayers": { "type": "array" },
+        "bufferMinutes": { "type": "integer" },
+        "maxDailyConsults": { "type": "integer" },
+        "acceptingNewPatients": { "type": "boolean" },
+        "twoFactorEnabled": { "type": "boolean" },
+        "smsAlerts": { "type": "boolean" },
+        "emailDigest": { "type": "boolean" },
+        "avatarUrl": { "type": "string", "maxLength": 600 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "specialty", "consultationFee", "bufferMinutes", "maxDailyConsults", "acceptingNewPatients", "createdAt", "updatedAt"]
+    },
+    "PatientRecord": {
+      "title": "PatientRecord",
+      "description": "Clinical patient summary and vitals owned by the assigned clinician.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clinicianUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "mrn": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "age": { "type": "integer" },
+        "gender": { "type": "string", "maxLength": 24 },
+        "avatarUrl": { "type": "string", "maxLength": 600 },
+        "condition": { "type": "string", "maxLength": 160 },
+        "riskLevel": { "type": "string", "enum": ["High Risk", "Moderate", "Stable"], "maxLength": 24 },
+        "bloodPressure": { "type": "string", "maxLength": 24 },
+        "heartRate": { "type": "integer" },
+        "spo2": { "type": "integer" },
+        "temp": { "type": "string", "maxLength": 16 },
+        "lastVisit": { "type": "string", "maxLength": 40 },
+        "encounters": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "clinicianUid", "mrn", "name", "age", "riskLevel", "bloodPressure", "heartRate", "spo2", "createdAt", "updatedAt"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Patient-clinician scheduled visit with lifecycle tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "bookingCode": { "type": "string", "minLength": 3, "maxLength": 24 },
+        "patientUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clinicianUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "patientName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "doctorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "doctorName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "doctorSpecialty": { "type": "string", "maxLength": 80 },
+        "doctorAvatar": { "type": "string", "maxLength": 600 },
+        "clinicLocation": { "type": "string", "maxLength": 160 },
+        "dateLabel": { "type": "string", "minLength": 2, "maxLength": 60 },
+        "timeSlot": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "modality": { "type": "string", "enum": ["in-person", "video"], "maxLength": 20 },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "completed", "cancelled"], "maxLength": 24 },
+        "reason": { "type": "string", "maxLength": 400 },
+        "fee": { "type": "integer" },
+        "preCheckedIn": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "bookingCode", "patientUid", "clinicianUid", "patientName", "doctorId", "doctorName", "dateLabel", "timeSlot", "modality", "status", "fee", "preCheckedIn", "createdAt", "updatedAt"]
+    },
+    "ScheduleSlot": {
+      "title": "ScheduleSlot",
+      "description": "Weekly clinician availability block.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "clinicianUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "dayOfWeek": { "type": "string", "enum": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], "maxLength": 10 },
+        "startTime": { "type": "string", "maxLength": 20 },
+        "endTime": { "type": "string", "maxLength": 20 },
+        "modality": { "type": "string", "enum": ["in-person", "video", "hybrid"], "maxLength": 20 },
+        "status": { "type": "string", "enum": ["available", "booked", "blocked"], "maxLength": 20 },
+        "patientName": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 240 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "clinicianUid", "dayOfWeek", "startTime", "endTime", "modality", "status", "createdAt", "updatedAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Clinical alert, booking request, or lab telemetry notice.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recipientUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "category": { "type": "string", "enum": ["request", "cancellation", "reminder", "lab"], "maxLength": 24 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 400 },
+        "patientName": { "type": "string", "maxLength": 120 },
+        "relatedAppointmentId": { "type": "string", "maxLength": 128 },
+        "isRead": { "type": "boolean" },
+        "actionStatus": { "type": "string", "enum": ["pending", "accepted", "declined", "reviewed"], "maxLength": 24 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recipientUid", "category", "title", "isRead", "actionStatus", "createdAt", "updatedAt"]
+    },
+    "Prescription": {
+      "title": "Prescription",
+      "description": "Patient medication record with refill workflow.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "patientUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "medication": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "dosage": { "type": "string", "maxLength": 120 },
+        "doctorName": { "type": "string", "maxLength": 120 },
+        "refillsLeft": { "type": "integer" },
+        "refillStatus": { "type": "string", "enum": ["active", "requested", "approved"], "maxLength": 24 },
+        "lastFilled": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "patientUid", "medication", "dosage", "refillsLeft", "refillStatus", "createdAt", "updatedAt"]
+    },
+    "AiSession": {
+      "title": "AiSession",
+      "description": "Parent AI chat session container.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "portal": { "type": "string", "enum": ["patient", "clinical"], "maxLength": 20 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerUid", "portal", "title", "createdAt", "updatedAt"]
+    },
+    "AiMessage": {
+      "title": "AiMessage",
+      "description": "Chat message belonging to an AiSession.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sender": { "type": "string", "enum": ["user", "assistant"], "maxLength": 20 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "recommendedDoctorIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "sessionId", "ownerUid", "sender", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User workspace metadata without PII."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated PII subcollection for user contact and MRN details."
+    },
+    "/doctors/{doctorId}": {
+      "schema": { "$ref": "#/entities/Doctor" },
+      "description": "Specialist physician directory."
+    },
+    "/doctorProfiles/{userId}": {
+      "schema": { "$ref": "#/entities/DoctorProfileSettings" },
+      "description": "Clinician settings and public preview profile."
+    },
+    "/patients/{patientId}": {
+      "schema": { "$ref": "#/entities/PatientRecord" },
+      "description": "Clinician-managed patient roster and vitals."
+    },
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Appointments linking patients and clinicians."
+    },
+    "/schedules/{slotId}": {
+      "schema": { "$ref": "#/entities/ScheduleSlot" },
+      "description": "Clinician weekly availability blocks."
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "Clinical and scheduling notifications."
+    },
+    "/prescriptions/{rxId}": {
+      "schema": { "$ref": "#/entities/Prescription" },
+      "description": "Patient prescriptions and refill requests."
+    },
+    "/aiSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/AiSession" },
+      "description": "AI concierge and clinical copilot sessions."
+    },
+    "/aiSessions/{sessionId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/AiMessage" },
+      "description": "Messages scoped to an AI session."
+    }
+  }
+}

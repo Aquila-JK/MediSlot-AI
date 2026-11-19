@@ -1,0 +1,8 @@
+{
+  "name": "MediSlot AI",
+  "description": "Dual-portal intelligent healthcare scheduling, clinical triage, and consultation management platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
