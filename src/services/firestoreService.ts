@@ -41,6 +41,29 @@ import {
   INITIAL_PRESCRIPTIONS,
   INITIAL_SCHEDULES,
 } from '../data/seedData.ts';
+import {
+  apiAddScheduleSlot,
+  apiCreateAppointment,
+  apiCreatePatient,
+  apiDeleteScheduleSlot,
+  apiGetAppointments,
+  apiGetDoctorProfile,
+  apiGetDoctors,
+  apiGetNotifications,
+  apiGetPatients,
+  apiGetPrescriptions,
+  apiGetSchedules,
+  apiMarkAllNotificationsRead,
+  apiRequestPrescriptionRefill,
+  apiRescheduleAppointment,
+  apiSaveDoctorProfile,
+  apiToggleAppointmentPreCheckIn,
+  apiUpdateAppointmentStatus,
+  apiUpdateNotificationAction,
+  apiUpdateScheduleSlotStatus,
+  subscribeSupabaseAppointments,
+  subscribeSupabaseNotifications,
+} from './supabaseService.ts';
 
 // --- Local Persisted Workspace Store (Used for Direct Passwordless Access) ---
 
@@ -221,6 +244,59 @@ function useFirebaseMode(): boolean {
 
 export function ensureLocalWorkspaceReady(): void {
   readLocalState();
+  syncFromBackend().catch(() => {});
+}
+
+async function syncFromBackend() {
+  try {
+    const [docs, appts, pats, scheds, notifs, rxs, docProf] = await Promise.allSettled([
+      apiGetDoctors(),
+      apiGetAppointments({ patientUid: LOCAL_WORKSPACE_UID, clinicianUid: LOCAL_WORKSPACE_UID }),
+      apiGetPatients(LOCAL_WORKSPACE_UID),
+      apiGetSchedules(LOCAL_WORKSPACE_UID),
+      apiGetNotifications(LOCAL_WORKSPACE_UID),
+      apiGetPrescriptions(LOCAL_WORKSPACE_UID),
+      apiGetDoctorProfile(LOCAL_WORKSPACE_UID),
+    ]);
+
+    const state = readLocalState();
+    let changed = false;
+
+    if (docs.status === 'fulfilled' && Array.isArray(docs.value) && docs.value.length > 0) {
+      state.doctors = docs.value;
+      changed = true;
+    }
+    if (appts.status === 'fulfilled' && Array.isArray(appts.value) && appts.value.length > 0) {
+      state.appointments = appts.value;
+      changed = true;
+    }
+    if (pats.status === 'fulfilled' && Array.isArray(pats.value) && pats.value.length > 0) {
+      state.patients = pats.value;
+      changed = true;
+    }
+    if (scheds.status === 'fulfilled' && Array.isArray(scheds.value) && scheds.value.length > 0) {
+      state.schedules = scheds.value;
+      changed = true;
+    }
+    if (notifs.status === 'fulfilled' && Array.isArray(notifs.value) && notifs.value.length > 0) {
+      state.notifications = notifs.value;
+      changed = true;
+    }
+    if (rxs.status === 'fulfilled' && Array.isArray(rxs.value) && rxs.value.length > 0) {
+      state.prescriptions = rxs.value;
+      changed = true;
+    }
+    if (docProf.status === 'fulfilled' && docProf.value) {
+      state.doctorProfile = docProf.value;
+      changed = true;
+    }
+
+    if (changed) {
+      writeLocalState(state);
+    }
+  } catch {
+    // Keep local cache if offline or server loading
+  }
 }
 
 // --- Firebase User Bootstrap (used only if Firebase Auth user is present) ---
@@ -554,7 +630,14 @@ export function subscribePatientAppointments(
   onData: (appts: Appointment[]) => void
 ): Unsubscribe {
   if (!useFirebaseMode()) {
-    return subscribeLocal((s) => s.appointments, onData);
+    const unsubLocal = subscribeLocal((s) => s.appointments, onData);
+    const unsubRealtime = subscribeSupabaseAppointments(() => {
+      syncFromBackend().catch(() => {});
+    });
+    return () => {
+      unsubLocal();
+      unsubRealtime();
+    };
   }
   const safeUid = sanitizeId(uid);
   const q = query(collection(db, 'appointments'), where('patientUid', '==', safeUid));
@@ -626,7 +709,14 @@ export function subscribeNotifications(
   onData: (items: NotificationItem[]) => void
 ): Unsubscribe {
   if (!useFirebaseMode()) {
-    return subscribeLocal((s) => s.notifications, onData);
+    const unsubLocal = subscribeLocal((s) => s.notifications, onData);
+    const unsubRealtime = subscribeSupabaseNotifications(() => {
+      syncFromBackend().catch(() => {});
+    });
+    return () => {
+      unsubLocal();
+      unsubRealtime();
+    };
   }
   const safeUid = sanitizeId(uid);
   const q = query(collection(db, 'notifications'), where('recipientUid', '==', safeUid));
@@ -760,6 +850,7 @@ export async function createAppointment(params: {
     state.appointments = [created, ...state.appointments];
     state.notifications = [{ ...notifObj, createdAt: nowIso, updatedAt: nowIso }, ...state.notifications];
     writeLocalState(state);
+    apiCreateAppointment(params).catch(() => {});
     return created;
   }
 
@@ -791,6 +882,7 @@ export async function updateAppointmentStatus(
       a.id === safeId ? { ...a, status, updatedAt: new Date().toISOString() } : a
     );
     writeLocalState(state);
+    apiUpdateAppointmentStatus(safeId, status).catch(() => {});
     return;
   }
   try {
@@ -825,6 +917,7 @@ export async function rescheduleAppointment(
         : a
     );
     writeLocalState(state);
+    apiRescheduleAppointment(safeId, dateLabel, timeSlot, modality).catch(() => {});
     return;
   }
   try {
@@ -848,6 +941,7 @@ export async function toggleAppointmentPreCheckIn(appointmentId: string): Promis
       a.id === safeId ? { ...a, preCheckedIn: true, updatedAt: new Date().toISOString() } : a
     );
     writeLocalState(state);
+    apiToggleAppointmentPreCheckIn(safeId).catch(() => {});
     return;
   }
   try {
@@ -899,6 +993,7 @@ export async function registerNewPatient(
     const nowIso = new Date().toISOString();
     state.patients = [{ ...newRecord, createdAt: nowIso, updatedAt: nowIso }, ...state.patients];
     writeLocalState(state);
+    apiCreatePatient(safeUid, input).catch(() => {});
     return;
   }
 
@@ -942,6 +1037,7 @@ export async function addScheduleSlot(
     const nowIso = new Date().toISOString();
     state.schedules = [...state.schedules, { ...newSlot, createdAt: nowIso, updatedAt: nowIso }];
     writeLocalState(state);
+    apiAddScheduleSlot(safeUid, input).catch(() => {});
     return;
   }
 
@@ -967,6 +1063,7 @@ export async function updateScheduleSlotStatus(
       s.id === safeId ? { ...s, status, updatedAt: new Date().toISOString() } : s
     );
     writeLocalState(state);
+    apiUpdateScheduleSlotStatus(safeId, status).catch(() => {});
     return;
   }
   try {
@@ -985,6 +1082,7 @@ export async function deleteScheduleSlot(slotId: string): Promise<void> {
     const state = readLocalState();
     state.schedules = state.schedules.filter((s) => s.id !== safeId);
     writeLocalState(state);
+    apiDeleteScheduleSlot(safeId).catch(() => {});
     return;
   }
   try {
@@ -1006,6 +1104,7 @@ export async function updateNotificationAction(
       n.id === safeId ? { ...n, actionStatus, isRead, updatedAt: new Date().toISOString() } : n
     );
     writeLocalState(state);
+    apiUpdateNotificationAction(safeId, actionStatus, isRead).catch(() => {});
     return;
   }
   try {
@@ -1025,6 +1124,7 @@ export async function markAllNotificationsRead(items: NotificationItem[]): Promi
     const nowIso = new Date().toISOString();
     state.notifications = state.notifications.map((n) => ({ ...n, isRead: true, updatedAt: nowIso }));
     writeLocalState(state);
+    apiMarkAllNotificationsRead(LOCAL_WORKSPACE_UID).catch(() => {});
     return;
   }
   for (const item of items) {
@@ -1044,6 +1144,7 @@ export async function requestPrescriptionRefill(rx: Prescription): Promise<void>
         : item
     );
     writeLocalState(state);
+    apiRequestPrescriptionRefill(safeId).catch(() => {});
     return;
   }
   try {
@@ -1088,6 +1189,7 @@ export async function saveDoctorProfileSettings(
       updatedAt: new Date().toISOString(),
     };
     writeLocalState(state);
+    apiSaveDoctorProfile(safeUid, payload).catch(() => {});
     return;
   }
 

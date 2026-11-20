@@ -45,6 +45,26 @@ export const DoctorSettingsPage: React.FC<DoctorSettingsPageProps> = ({
   const [emailDigest, setEmailDigest] = useState(doctorProfile?.emailDigest ?? true);
   const [saving, setSaving] = useState(false);
   const [savedToast, setSavedToast] = useState(false);
+  const [supabaseStatus, setSupabaseStatus] = useState<{
+    configured?: boolean;
+    connected?: boolean;
+    url?: string;
+    message?: string;
+  } | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
+  const handleCheckSupabase = async () => {
+    setCheckingStatus(true);
+    try {
+      const res = await fetch('/api/supabase/status');
+      const data = await res.json();
+      setSupabaseStatus(data);
+    } catch {
+      setSupabaseStatus({ configured: false, connected: false, message: 'Backend server unreachable' });
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
 
   useEffect(() => {
     if (!doctorProfile) return;
@@ -105,7 +125,7 @@ export const DoctorSettingsPage: React.FC<DoctorSettingsPageProps> = ({
       {savedToast && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl bg-primary text-on-primary text-xs font-semibold shadow-lg flex items-center gap-2">
           <span className="material-symbols-outlined text-[18px] text-tertiary-fixed">check_circle</span>
-          <span>Clinician profile &amp; preferences synced to Firestore.</span>
+          <span>Clinician profile &amp; preferences synced to Supabase database.</span>
         </div>
       )}
 
@@ -292,6 +312,74 @@ export const DoctorSettingsPage: React.FC<DoctorSettingsPageProps> = ({
                   className="accent-primary w-4 h-4"
                 />
               </label>
+            </div>
+          </div>
+
+          {/* Supabase Integration & Database Diagnostics */}
+          <div className="rounded-2xl bg-surface-container-lowest p-6 border border-outline-variant/25 clinical-shadow space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-outline-variant/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                  <span className="material-symbols-outlined text-[18px]">database</span>
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-primary">Supabase Cloud Database</h3>
+                  <p className="text-xs text-on-surface-variant">
+                    PostgreSQL backend connection &amp; real-time clinical synchronization
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCheckSupabase}
+                disabled={checkingStatus}
+                className="px-3 py-1.5 rounded-xl bg-surface-container text-xs font-semibold text-primary hover:bg-surface-container-high border border-outline-variant/30 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+              >
+                <span className="material-symbols-outlined text-[15px]">refresh</span>
+                <span>{checkingStatus ? 'Checking...' : 'Test Connection'}</span>
+              </button>
+            </div>
+
+            {supabaseStatus ? (
+              <div
+                className={`p-4 rounded-xl border text-xs space-y-2 ${
+                  supabaseStatus.connected
+                    ? 'bg-secondary-container/20 border-secondary/40 text-on-surface'
+                    : 'bg-surface-container-low border-outline-variant/30 text-on-surface'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold">
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full ${
+                      supabaseStatus.connected ? 'bg-secondary' : 'bg-tertiary'
+                    }`}
+                  />
+                  <span>
+                    {supabaseStatus.connected
+                      ? 'Connected to Supabase PostgreSQL'
+                      : supabaseStatus.configured
+                      ? 'Endpoint Configured (Pending Tables)'
+                      : 'Local Resilient Fallback Mode Active'}
+                  </span>
+                </div>
+                <p className="text-on-surface-variant leading-relaxed">{supabaseStatus.message}</p>
+                {supabaseStatus.url && (
+                  <p className="text-[11px] text-on-surface-variant font-mono">
+                    Host: {supabaseStatus.url}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/30 text-xs text-on-surface-variant flex items-center justify-between">
+                <span>Click &quot;Test Connection&quot; to inspect real-time database connectivity.</span>
+                <span className="text-[11px] font-mono text-primary font-semibold">npm run setup:supabase</span>
+              </div>
+            )}
+
+            <div className="p-3.5 rounded-xl bg-surface-container-low text-xs space-y-1 text-on-surface-variant">
+              <span className="font-semibold text-primary block">Quick Setup Instructions:</span>
+              <p>1. Open <code className="bg-surface-container px-1 py-0.5 rounded text-primary">.env</code> and fill in <code className="bg-surface-container px-1 py-0.5 rounded text-primary">SUPABASE_URL</code> and <code className="bg-surface-container px-1 py-0.5 rounded text-primary">SUPABASE_ANON_KEY</code>.</p>
+              <p>2. Run <code className="bg-surface-container px-1 py-0.5 rounded text-primary">npm run setup:supabase</code> in your terminal to automatically create and verify tables.</p>
             </div>
           </div>
         </div>
