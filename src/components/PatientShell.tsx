@@ -24,7 +24,7 @@ export const PatientShell: React.FC<PatientShellProps> = ({
     { route: 'home', label: 'Home', icon: 'home' },
     { route: 'find-doctors', label: 'Find Doctors', icon: 'search' },
     { route: 'dashboard', label: 'My Visits & EHR', icon: 'calendar_month' },
-    { route: 'ai-assistant', label: 'AI Concierge', icon: 'smart_toy' },
+    { route: 'ai-assistant', label: 'AI Chatbot', icon: 'smart_toy' },
     { route: 'support', label: 'Support & FAQs', icon: 'support_agent' },
   ];
 

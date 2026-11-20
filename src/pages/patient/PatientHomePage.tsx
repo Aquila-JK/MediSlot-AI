@@ -236,10 +236,10 @@ export const PatientHomePage: React.FC<PatientHomePageProps> = ({
         <button
           type="button"
           onClick={() => onNavigate('ai-assistant')}
-          className="px-5 py-3 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary-container transition-colors shrink-0 cursor-pointer flex items-center gap-2"
+          className="px-5 py-3 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary-container transition-colors shrink-0 cursor-pointer flex items-center gap-2 shadow-sm"
         >
-          <span className="material-symbols-outlined text-[18px]">chat</span>
-          <span>Ask AI Concierge</span>
+          <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+          <span>Open AI Health Chatbot</span>
         </button>
       </section>
     </div>
