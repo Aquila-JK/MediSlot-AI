@@ -38,6 +38,7 @@ import { DoctorProfilePage } from './pages/patient/DoctorProfilePage.tsx';
 import { AppointmentConfirmationPage } from './pages/patient/AppointmentConfirmationPage.tsx';
 import { PatientDashboardPage } from './pages/patient/PatientDashboardPage.tsx';
 import { PatientAiAssistantPage } from './pages/patient/PatientAiAssistantPage.tsx';
+import { CustomerSupportPage } from './pages/patient/CustomerSupportPage.tsx';
 
 // Clinical Suite Pages
 import { DoctorDashboardPage } from './pages/clinical/DoctorDashboardPage.tsx';
@@ -113,7 +114,15 @@ function MediSlotWorkspace() {
   if (activePortal === 'patient') {
     const activeDoc = selectedDoctor || doctors[0] || null;
     return (
-      <PatientShell currentRoute={patientRoute} onNavigate={setPatientRoute}>
+      <PatientShell
+        currentRoute={patientRoute}
+        onNavigate={setPatientRoute}
+        doctors={doctors}
+        onSelectDoctor={(docItem) => {
+          setSelectedDoctor(docItem);
+          setPatientRoute('doctor-profile');
+        }}
+      >
         {patientRoute === 'home' && (
           <PatientHomePage
             userName={displayName}
@@ -189,6 +198,18 @@ function MediSlotWorkspace() {
             onSelectDoctor={(docItem, slot) => {
               setSelectedDoctor(docItem);
               setPreselectedSlot(slot);
+              setPatientRoute('doctor-profile');
+            }}
+          />
+        )}
+
+        {patientRoute === 'support' && (
+          <CustomerSupportPage
+            userName={displayName}
+            doctors={doctors}
+            onNavigate={setPatientRoute}
+            onSelectDoctor={(docItem) => {
+              setSelectedDoctor(docItem);
               setPatientRoute('doctor-profile');
             }}
           />

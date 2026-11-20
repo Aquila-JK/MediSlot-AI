@@ -140,10 +140,10 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
                   e.stopPropagation();
                   handlePatientSignIn();
                 }}
-                className="w-full py-3 px-4 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary-container transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3 px-4 rounded-xl bg-primary text-on-primary font-semibold text-sm hover:bg-primary-container transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
               >
-                <span className="material-symbols-outlined text-[18px]">login</span>
-                <span>Sign In</span>
+                <span className="material-symbols-outlined text-[18px]">person_check</span>
+                <span>Enter Patient Portal</span>
               </button>
             </div>
 
@@ -222,14 +222,14 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
                   e.stopPropagation();
                   handleClinicalSignUp();
                 }}
-                className={`w-full py-3 px-4 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                className={`w-full py-3 px-4 rounded-xl font-semibold text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm ${
                   selectedPortal === 'clinical'
                     ? 'bg-tertiary-fixed text-on-tertiary-fixed hover:bg-tertiary-fixed-dim'
                     : 'bg-primary text-on-primary hover:bg-primary-container'
                 }`}
               >
-                <span className="material-symbols-outlined text-[18px]">medical_services</span>
-                <span>Sign Up &amp; Open Clinical Dashboard</span>
+                <span className="material-symbols-outlined text-[18px]">stethoscope</span>
+                <span>Enter Doctor Clinical Suite</span>
               </button>
             </div>
           </div>

@@ -6,7 +6,8 @@ export type PatientRoute =
   | 'doctor-profile'
   | 'appointment-confirmation'
   | 'dashboard'
-  | 'ai-assistant';
+  | 'ai-assistant'
+  | 'support';
 
 export type ClinicalRoute =
   | 'dashboard'
