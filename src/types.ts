@@ -57,6 +57,17 @@ export interface UserProfile {
   updatedAt?: unknown;
 }
 
+export interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: PortalMode;
+  mrn: string;
+  phone?: string;
+  createdAt: string;
+}
+
 export interface UserPrivateInfo {
   uid: string;
   email: string;

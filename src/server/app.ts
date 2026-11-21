@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
   checkSupabaseHealth,
@@ -44,6 +45,161 @@ function getGeminiClient(): GoogleGenAI {
 
 export const app = express();
 app.use(express.json({ limit: '2mb' }));
+
+// ===========================================================================
+// Individual User Authentication & Password Hashing API
+// ===========================================================================
+const AUTH_SALT = 'medislot_enterprise_salt_2026_clinical_auth';
+
+function hashPasswordServer(password: string): string {
+  return crypto.createHash('sha256').update(`${AUTH_SALT}:${password.trim()}`).digest('hex');
+}
+
+interface ServerUser {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  role: 'patient' | 'clinical';
+  mrn: string;
+  phone?: string;
+  createdAt: string;
+}
+
+const serverUsers: ServerUser[] = [
+  {
+    id: 'usr_eleanor_vance',
+    name: 'Eleanor Vance',
+    email: 'patient@medislot.com',
+    passwordHash: hashPasswordServer('Patient@123'),
+    role: 'patient',
+    mrn: 'MRN-84920',
+    phone: '+1 (415) 555-0194',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'usr_dr_jenkins',
+    name: 'Dr. Sarah Jenkins',
+    email: 'doctor@medislot.com',
+    passwordHash: hashPasswordServer('Doctor@123'),
+    role: 'clinical',
+    mrn: 'MRN-DOC01',
+    phone: '+1 (415) 555-0188',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+app.post('/api/auth/register', (req, res) => {
+  try {
+    const { name, email, password, role = 'patient' } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanName = String(name || '').trim();
+
+    if (!cleanName || cleanName.length < 2) {
+      res.status(400).json({ success: false, error: 'Full legal name (min 2 chars) is required.' });
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      res.status(400).json({ success: false, error: 'Valid email address is required.' });
+      return;
+    }
+    if (!password || String(password).length < 6) {
+      res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' });
+      return;
+    }
+
+    const existing = serverUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      res.status(409).json({ success: false, error: 'An account is already registered with this email address.' });
+      return;
+    }
+
+    const newUser: ServerUser = {
+      id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: cleanName,
+      email: cleanEmail,
+      passwordHash: hashPasswordServer(password),
+      role: role === 'clinical' ? 'clinical' : 'patient',
+      mrn: `MRN-${Math.floor(10000 + Math.random() * 90000)}`,
+      phone: '+1 (555) 019-2834',
+      createdAt: new Date().toISOString(),
+    };
+
+    serverUsers.push(newUser);
+    const { passwordHash: _ph, ...safeUser } = newUser;
+    res.status(201).json({ success: true, user: safeUser });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Registration failed.';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !password) {
+      res.status(400).json({ success: false, error: 'Email and password are required.' });
+      return;
+    }
+
+    const user = serverUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!user) {
+      res.status(401).json({ success: false, error: 'No account found with this email address.' });
+      return;
+    }
+
+    const computed = hashPasswordServer(password);
+    if (computed !== user.passwordHash) {
+      res.status(401).json({ success: false, error: 'Incorrect password. Please verify and try again.' });
+      return;
+    }
+
+    const { passwordHash: _ph, ...safeUser } = user;
+    res.json({ success: true, user: safeUser });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Login failed.';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+app.post('/api/auth/forgot-password', (req, res) => {
+  try {
+    const { email } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const user = serverUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!user) {
+      res.status(404).json({ success: false, error: 'No account found with this email address.' });
+      return;
+    }
+    res.json({ success: true, message: `Password reset verification confirmed for ${cleanEmail}.` });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to process request.';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+app.post('/api/auth/reset-password', (req, res) => {
+  try {
+    const { email, newPassword } = req.body || {};
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!newPassword || String(newPassword).length < 6) {
+      res.status(400).json({ success: false, error: 'New password must be at least 6 characters.' });
+      return;
+    }
+    const user = serverUsers.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!user) {
+      res.status(404).json({ success: false, error: 'No account found with this email address.' });
+      return;
+    }
+    user.passwordHash = hashPasswordServer(newPassword);
+    res.json({ success: true, message: 'Password reset successfully.' });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Reset failed.';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
 
 // ===========================================================================
 // Health & Supabase Diagnostic Endpoints
@@ -354,38 +510,87 @@ app.post('/api/prescriptions/:id/refill', async (req, res) => {
 // AI Clinical Intelligence Endpoints (Powered by Gemini + Supabase Data)
 // ===========================================================================
 
+function generateFallbackClinicalResponse(message: string, userName: string, doctors: any[]) {
+  const lower = String(message || '').toLowerCase();
+  let urgencyLevel = 'routine';
+  let recommendedSpecialty = 'Cardiology';
+  let matchingDocs = doctors.filter((d: any) => d.specialty?.toLowerCase().includes('cardio'));
+
+  if (lower.includes('chest') || lower.includes('heart') || lower.includes('palpitation') || lower.includes('flutter') || lower.includes('breath')) {
+    urgencyLevel = lower.includes('crushing') || lower.includes('radiat') || lower.includes('severe') ? 'urgent_care' : 'priority';
+    recommendedSpecialty = 'Cardiology';
+    matchingDocs = doctors.filter((d: any) => d.specialty?.toLowerCase().includes('cardio'));
+  } else if (lower.includes('head') || lower.includes('migraine') || lower.includes('dizziness') || lower.includes('neuro') || lower.includes('stroke')) {
+    urgencyLevel = lower.includes('sudden') || lower.includes('worst') || lower.includes('paralysis') ? 'urgent_care' : 'routine';
+    recommendedSpecialty = 'Neurology';
+    matchingDocs = doctors.filter((d: any) => d.specialty?.toLowerCase().includes('neuro'));
+  } else if (lower.includes('skin') || lower.includes('rash') || lower.includes('mole') || lower.includes('acne') || lower.includes('derma')) {
+    urgencyLevel = 'routine';
+    recommendedSpecialty = 'Dermatology';
+    matchingDocs = doctors.filter((d: any) => d.specialty?.toLowerCase().includes('derma'));
+  } else if (lower.includes('knee') || lower.includes('joint') || lower.includes('bone') || lower.includes('shoulder') || lower.includes('ortho')) {
+    urgencyLevel = 'routine';
+    recommendedSpecialty = 'Orthopedics';
+    matchingDocs = doctors.filter((d: any) => d.specialty?.toLowerCase().includes('ortho'));
+  } else if (lower.includes('refill') || lower.includes('medication') || lower.includes('prescription')) {
+    urgencyLevel = 'routine';
+    recommendedSpecialty = 'Cardiology';
+  } else if (lower.includes('hour') || lower.includes('where') || lower.includes('park') || lower.includes('location')) {
+    urgencyLevel = 'routine';
+  }
+
+  if (!matchingDocs || matchingDocs.length === 0) {
+    matchingDocs = doctors.slice(0, 2);
+  }
+
+  const primaryDoc = matchingDocs[0] || doctors[0];
+  let reply = `Thank you for consulting MediSlot AI, ${userName}. Based on your query regarding "${message.slice(0, 60).trim()}...", we recommend scheduling a clinical evaluation with ${primaryDoc?.name ? primaryDoc.name + ' (' + primaryDoc.specialty + ')' : 'one of our Pavilion B specialists'}.`;
+
+  if (urgencyLevel === 'urgent_care') {
+    reply += ` 🚨 Immediate Medical Notice: If you are experiencing acute chest tightness, shortness of breath, or emergency symptoms, please call 911 or visit the nearest emergency department right away.`;
+  } else {
+    reply += ` You can review available slots and book directly from the recommendation card below.`;
+  }
+
+  return {
+    reply,
+    urgencyLevel,
+    recommendedSpecialty: primaryDoc?.specialty || recommendedSpecialty,
+    recommendedDoctorIds: matchingDocs.slice(0, 2).map((d: any) => d.id),
+    checklist: [
+      'Bring active insurance card and photo ID',
+      'List of current medications, dosages, and recent symptom log',
+      'Any prior relevant ECG tracings or diagnostic reports',
+    ],
+  };
+}
+
 app.post('/api/ai/patient-concierge', async (req, res) => {
-  try {
-    const { message, history = [], userName = 'Patient' } = req.body ?? {};
-    let doctors = req.body?.doctors;
+  const { message, history = [], userName = 'Patient' } = req.body ?? {};
+  let doctors = req.body?.doctors;
 
-    // If doctors list was not supplied by client, fetch active specialists from Supabase!
-    if (!Array.isArray(doctors) || doctors.length === 0) {
+  // If doctors list was not supplied by client, fetch active specialists from Supabase!
+  if (!Array.isArray(doctors) || doctors.length === 0) {
+    try {
       doctors = await dbGetDoctors();
+    } catch {
+      doctors = [];
     }
+  }
 
-    if (typeof message !== 'string' || !message.trim()) {
-      res.status(400).json({ error: 'Message is required.' });
-      return;
-    }
+  if (typeof message !== 'string' || !message.trim()) {
+    res.status(400).json({ error: 'Message is required.' });
+    return;
+  }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-      const matchingDocs = Array.isArray(doctors) && doctors.length > 0 ? doctors.slice(0, 2) : [];
-      res.json({
-        reply: `Thank you for sharing your symptoms. Based on your description, we recommend a routine diagnostic evaluation with ${matchingDocs[0]?.name || 'a MediSlot cardiologist'}. Please monitor your vitals and seek immediate emergency care (call 911) if you experience severe chest tightness, acute shortness of breath, or emergency symptoms.`,
-        urgencyLevel: 'routine',
-        recommendedSpecialty: matchingDocs[0]?.specialty || 'Cardiology',
-        recommendedDoctorIds: matchingDocs.map((d: { id: string }) => d.id),
-        checklist: [
-          'Record daily symptom onset and severity log',
-          'Bring current prescription medications',
-          'Have your insurance ID card ready for check-in',
-        ],
-      });
-      return;
-    }
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    const fallback = generateFallbackClinicalResponse(message, userName, doctors);
+    res.json(fallback);
+    return;
+  }
 
+  try {
     const ai = getGeminiClient();
     const doctorContext = Array.isArray(doctors)
       ? doctors
@@ -457,9 +662,9 @@ ${message.trim().slice(0, 1500)}
     const parsed = JSON.parse((response.text ?? '{}').trim());
     res.json(parsed);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to reach Gemini AI service.';
-    console.error('Patient Concierge AI error:', msg);
-    res.status(500).json({ error: msg });
+    console.warn('Gemini AI unavailable or rate-limited; returning clinical fallback triage:', error);
+    const fallback = generateFallbackClinicalResponse(message, userName, doctors);
+    res.json(fallback);
   }
 });
 

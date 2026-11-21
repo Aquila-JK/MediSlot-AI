@@ -630,7 +630,16 @@ export function subscribePatientAppointments(
   onData: (appts: Appointment[]) => void
 ): Unsubscribe {
   if (!useFirebaseMode()) {
-    const unsubLocal = subscribeLocal((s) => s.appointments, onData);
+    const isDefaultEleanor = uid === 'usr_eleanor_vance' || uid === LOCAL_WORKSPACE_UID;
+    const unsubLocal = subscribeLocal(
+      (s) =>
+        s.appointments.filter(
+          (a) =>
+            a.patientUid === uid ||
+            (isDefaultEleanor && (a.patientUid === LOCAL_WORKSPACE_UID || a.patientUid === 'usr_eleanor_vance'))
+        ),
+      onData
+    );
     const unsubRealtime = subscribeSupabaseAppointments(() => {
       syncFromBackend().catch(() => {});
     });
@@ -709,7 +718,16 @@ export function subscribeNotifications(
   onData: (items: NotificationItem[]) => void
 ): Unsubscribe {
   if (!useFirebaseMode()) {
-    const unsubLocal = subscribeLocal((s) => s.notifications, onData);
+    const isDoctor = uid === 'usr_dr_jenkins' || uid === LOCAL_WORKSPACE_UID;
+    const unsubLocal = subscribeLocal(
+      (s) =>
+        s.notifications.filter(
+          (n) =>
+            n.recipientUid === uid ||
+            (isDoctor && (n.recipientUid === LOCAL_WORKSPACE_UID || n.recipientUid === 'usr_dr_jenkins'))
+        ),
+      onData
+    );
     const unsubRealtime = subscribeSupabaseNotifications(() => {
       syncFromBackend().catch(() => {});
     });
@@ -734,7 +752,16 @@ export function subscribePrescriptions(
   onData: (items: Prescription[]) => void
 ): Unsubscribe {
   if (!useFirebaseMode()) {
-    return subscribeLocal((s) => s.prescriptions, onData);
+    const isDefaultEleanor = uid === 'usr_eleanor_vance' || uid === LOCAL_WORKSPACE_UID;
+    return subscribeLocal(
+      (s) =>
+        s.prescriptions.filter(
+          (p) =>
+            p.patientUid === uid ||
+            (isDefaultEleanor && (p.patientUid === LOCAL_WORKSPACE_UID || p.patientUid === 'usr_eleanor_vance'))
+        ),
+      onData
+    );
   }
   const safeUid = sanitizeId(uid);
   const q = query(collection(db, 'prescriptions'), where('patientUid', '==', safeUid));

@@ -37,7 +37,7 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
   doctors,
   onSelectDoctor,
 }) => {
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string>(() => `session_${uid || 'patient'}_concierge`);
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -53,11 +53,20 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
   useEffect(() => {
     let unsub: (() => void) | undefined;
     (async () => {
-      const session = await ensureAiSession(uid, 'patient', 'Patient Clinical Concierge');
-      setSessionId(session.id);
-      unsub = subscribeAiMessages(session.id, uid, (msgs) => {
-        setMessages(msgs);
-      });
+      try {
+        const session = await ensureAiSession(uid, 'patient', 'Patient Clinical Concierge');
+        setSessionId(session.id);
+        unsub = subscribeAiMessages(session.id, uid, (msgs) => {
+          setMessages(msgs);
+        });
+      } catch {
+        // local subscription fallback
+        const fallbackSessionId = `session_${uid || 'patient'}_concierge`;
+        setSessionId(fallbackSessionId);
+        unsub = subscribeAiMessages(fallbackSessionId, uid, (msgs) => {
+          setMessages(msgs);
+        });
+      }
     })();
     return () => {
       if (unsub) unsub();
@@ -70,14 +79,16 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
 
   const sendMessage = async (textToSend: string) => {
     const trimmed = textToSend.trim();
-    if (!trimmed || !sessionId || sending) return;
+    if (!trimmed || sending) return;
     setErrorMsg(null);
     setInput('');
     setSending(true);
 
+    const activeSessionId = sessionId || `session_${uid || 'patient'}_concierge`;
+
     try {
       await appendAiMessage({
-        sessionId,
+        sessionId: activeSessionId,
         ownerUid: uid,
         sender: 'user',
         text: trimmed,
@@ -116,7 +127,7 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
         : [];
 
       await appendAiMessage({
-        sessionId,
+        sessionId: activeSessionId,
         ownerUid: uid,
         sender: 'assistant',
         text: String(data.reply || 'I have evaluated your symptoms and matched you with specialist care.'),
@@ -128,14 +139,16 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
       let fallbackText = `Thank you for sharing your symptoms, ${userName}. Based on your query, we recommend a routine diagnostic evaluation with ${matched[0]?.name || 'a MediSlot specialist'}. You can reserve a direct slot below.`;
 
       const lower = trimmed.toLowerCase();
-      if (lower.includes('refill') || lower.includes('medication') || lower.includes('prescription')) {
+      if (lower.includes('chest') || lower.includes('heart') || lower.includes('breath')) {
+        fallbackText = `We note your symptoms involving cardiac discomfort. We recommend consulting Dr. Sarah Jenkins (Cardiology) at Pavilion B. Please seek immediate emergency medical care (call 911) if you experience severe crushing chest pain or acute shortness of breath.`;
+      } else if (lower.includes('refill') || lower.includes('medication') || lower.includes('prescription')) {
         fallbackText = `To request a medication refill, go to your Patient Dashboard and click "Request Refill" next to your active prescription. Your clinician will review your telemetry logs and authorize it within 24 hours.`;
       } else if (lower.includes('hour') || lower.includes('where') || lower.includes('park') || lower.includes('location')) {
         fallbackText = `Meridian Medical Pavilion is open Monday–Friday 8:00 AM – 6:00 PM and Saturday 9:00 AM – 2:00 PM at 400 Meridian Parkway, Pavilion B. Free visitor parking is located in Garage B with covered walkway access.`;
       }
 
       await appendAiMessage({
-        sessionId,
+        sessionId: activeSessionId,
         ownerUid: uid,
         sender: 'assistant',
         text: fallbackText,
