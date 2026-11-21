@@ -6,11 +6,13 @@ import { ASSETS } from '../data/seedData.ts';
 interface PortalLoginPageProps {
   onEnterPatientDashboard: () => void;
   onEnterClinicalDashboard: () => void;
+  onOpenChatbot?: () => void;
 }
 
 export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
   onEnterPatientDashboard,
   onEnterClinicalDashboard,
+  onOpenChatbot,
 }) => {
   const { enterPortal } = useAuth();
   const [selectedPortal, setSelectedPortal] = useState<PortalMode>('patient');
@@ -44,9 +46,21 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
             </p>
           </div>
         </div>
-        <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/40 text-xs font-semibold text-on-surface-variant">
-          <span className="w-2 h-2 rounded-full bg-secondary"></span>
-          <span>Instant Portal Access</span>
+        <div className="flex items-center gap-3">
+          {onOpenChatbot && (
+            <button
+              type="button"
+              onClick={onOpenChatbot}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/25 text-xs font-bold hover:bg-primary hover:text-white transition-all cursor-pointer shadow-xs"
+            >
+              <span className="material-symbols-outlined text-[17px] text-secondary">smart_toy</span>
+              <span>Ask AI Chatbot</span>
+            </button>
+          )}
+          <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/40 text-xs font-semibold text-on-surface-variant">
+            <span className="w-2 h-2 rounded-full bg-secondary"></span>
+            <span>Instant Portal Access</span>
+          </div>
         </div>
       </header>
 
@@ -64,6 +78,28 @@ export const PortalLoginPage: React.FC<PortalLoginPageProps> = ({
           <p className="text-base text-on-surface-variant leading-relaxed">
             Select your portal below to go straight to your Patient Dashboard or Clinical Dashboard—no email, password, or third-party login required.
           </p>
+
+          {onOpenChatbot && (
+            <div className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/30 flex items-center justify-between gap-4 shadow-sm hover:border-primary/50 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-primary to-secondary text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <span className="material-symbols-outlined text-[20px]">smart_toy</span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-primary">Need medical triage or appointment help?</p>
+                  <p className="text-[11px] text-on-surface-variant">Chat with MediSlot AI for symptoms, open doctor slots, and refills.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenChatbot}
+                className="px-3.5 py-2 rounded-xl bg-primary text-on-primary text-xs font-bold hover:bg-primary-container transition-colors cursor-pointer shrink-0 shadow-xs flex items-center gap-1.5"
+              >
+                <span>Launch Chatbot</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+              </button>
+            </div>
+          )}
 
           <div className="rounded-2xl overflow-hidden bg-surface-container-low border border-outline-variant/30 editorial-shadow">
             <img

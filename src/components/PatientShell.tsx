@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext.tsx';
 import { Doctor, PatientRoute } from '../types.ts';
-import { CustomerResponseWidget } from './CustomerResponseWidget.tsx';
+import { ChatbotWidget } from './ChatbotWidget.tsx';
 
 interface PatientShellProps {
   currentRoute: PatientRoute;
@@ -164,8 +164,8 @@ export const PatientShell: React.FC<PatientShellProps> = ({
         </button>
       </nav>
 
-      {/* Always-Available Customer Care & AI Response Widget */}
-      <CustomerResponseWidget
+      {/* Always-Available MediSlot AI Medical Chatbot */}
+      <ChatbotWidget
         userName={profile?.displayName || 'Eleanor Vance'}
         doctors={doctors}
         onNavigate={onNavigate}

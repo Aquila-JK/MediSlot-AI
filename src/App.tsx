@@ -39,6 +39,7 @@ import { AppointmentConfirmationPage } from './pages/patient/AppointmentConfirma
 import { PatientDashboardPage } from './pages/patient/PatientDashboardPage.tsx';
 import { PatientAiAssistantPage } from './pages/patient/PatientAiAssistantPage.tsx';
 import { CustomerSupportPage } from './pages/patient/CustomerSupportPage.tsx';
+import { ChatbotWidget } from './components/ChatbotWidget.tsx';
 
 // Clinical Suite Pages
 import { DoctorDashboardPage } from './pages/clinical/DoctorDashboardPage.tsx';
@@ -50,10 +51,11 @@ import { NotificationsPage } from './pages/clinical/NotificationsPage.tsx';
 import { DoctorSettingsPage } from './pages/clinical/DoctorSettingsPage.tsx';
 
 function MediSlotWorkspace() {
-  const { workspaceUid, enteredPortal, profile, privateInfo, activePortal, loading } = useAuth();
+  const { workspaceUid, enteredPortal, profile, privateInfo, activePortal, loading, enterPortal } = useAuth();
 
   const [patientRoute, setPatientRoute] = useState<PatientRoute>('dashboard');
   const [clinicalRoute, setClinicalRoute] = useState<ClinicalRoute>('dashboard');
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [patientAppointments, setPatientAppointments] = useState<Appointment[]>([]);
@@ -72,9 +74,11 @@ function MediSlotWorkspace() {
   const [doctorSearchSpecialty, setDoctorSearchSpecialty] = useState('All');
 
   useEffect(() => {
-    if (!enteredPortal) return;
+    const unsubDoc = subscribeDoctors(setDoctors);
+    if (!enteredPortal) return unsubDoc;
+
     const unsubs = [
-      subscribeDoctors(setDoctors),
+      unsubDoc,
       subscribePatientAppointments(workspaceUid, setPatientAppointments),
       subscribeClinicianAppointments(workspaceUid, setClinicianAppointments),
       subscribePatients(workspaceUid, setPatients),
@@ -99,12 +103,41 @@ function MediSlotWorkspace() {
     );
   }
 
+  const handleChatbotSelectDoctor = (doctor: Doctor, slot?: string) => {
+    if (!enteredPortal) {
+      enterPortal('patient');
+    }
+    setSelectedDoctor(doctor);
+    setPreselectedSlot(slot);
+    setPatientRoute('doctor-profile');
+    setIsChatbotOpen(false);
+  };
+
+  const handleChatbotNavigate = (route: PatientRoute) => {
+    if (!enteredPortal) {
+      enterPortal('patient');
+    }
+    setPatientRoute(route);
+    setIsChatbotOpen(false);
+  };
+
   if (!enteredPortal) {
     return (
-      <PortalLoginPage
-        onEnterPatientDashboard={() => setPatientRoute('dashboard')}
-        onEnterClinicalDashboard={() => setClinicalRoute('dashboard')}
-      />
+      <>
+        <PortalLoginPage
+          onEnterPatientDashboard={() => setPatientRoute('dashboard')}
+          onEnterClinicalDashboard={() => setClinicalRoute('dashboard')}
+          onOpenChatbot={() => setIsChatbotOpen(true)}
+        />
+        <ChatbotWidget
+          userName={profile?.displayName || 'Valued Patient'}
+          doctors={doctors}
+          isOpen={isChatbotOpen}
+          onToggleOpen={setIsChatbotOpen}
+          onNavigate={handleChatbotNavigate}
+          onSelectDoctor={handleChatbotSelectDoctor}
+        />
+      </>
     );
   }
 
