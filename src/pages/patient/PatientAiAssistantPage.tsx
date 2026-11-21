@@ -43,12 +43,53 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
   const [sending, setSending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeMode, setActiveMode] = useState<ChatbotMode>('triage');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [checklist, setChecklist] = useState<string[]>([
     'Photo ID & active insurance card',
     'List of current medications & dosages',
     'Recent ECG or telemetry report printouts (if available)',
   ]);
   const endRef = useRef<HTMLDivElement>(null);
+
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingDoc(true);
+    setUploadFeedback(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/rag/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      setUploadFeedback(`✅ "${file.name}" indexed (${data.document?.chunkCount || 1} chunks)`);
+      const activeSessionId = sessionId || `session_${uid || 'patient'}_concierge`;
+      await appendAiMessage({
+        sessionId: activeSessionId,
+        ownerUid: uid,
+        sender: 'assistant',
+        text: `📄 **Document Ingested into RAG Knowledge Base:** "${file.name}" (${data.document?.chunkCount || 1} semantic vector chunks). You can now ask questions about this document!`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setUploadFeedback(`❌ Error: ${msg}`);
+    } finally {
+      setIsUploadingDoc(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -100,6 +141,7 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
         body: JSON.stringify({
           message: trimmed,
           userName,
+          enableWebSearch: webSearchEnabled,
           history: messages.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
           doctors: doctors.map((d) => ({
             id: d.id,
@@ -132,6 +174,7 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
         sender: 'assistant',
         text: String(data.reply || 'I have evaluated your symptoms and matched you with specialist care.'),
         recommendedDoctorIds: validRecIds,
+        sources: Array.isArray(data.sources) ? data.sources : undefined,
       });
     } catch {
       // Intelligent fallback response so the chatbot always answers immediately
@@ -360,6 +403,66 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
                       ))}
                     </div>
                   )}
+
+                  {/* RAG Source Citations */}
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="w-full max-w-[85%] pl-9 pt-1 space-y-1.5">
+                      {msg.sources.some((s) => s.type === 'document') && (
+                        <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/70 text-xs space-y-1">
+                          <div className="font-bold text-blue-900 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[15px] text-blue-700">description</span>
+                            <span>Knowledge Base Sources:</span>
+                          </div>
+                          <div className="space-y-1">
+                            {msg.sources.filter((s) => s.type === 'document').map((docItem, di) => (
+                              <div key={di} className="text-blue-950/85 pl-2 border-l-2 border-blue-400">
+                                <span className="font-semibold">{docItem.title}</span>
+                                {docItem.similarity !== undefined && (
+                                  <span className="ml-1 text-[11px] text-blue-700 font-mono">
+                                    ({Math.round(docItem.similarity * 100)}% match)
+                                  </span>
+                                )}
+                                {docItem.excerpt && (
+                                  <p className="text-[11px] text-blue-800/80 italic mt-0.5">{docItem.excerpt}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {msg.sources.some((s) => s.type === 'web') && (
+                        <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/70 text-xs space-y-1">
+                          <div className="font-bold text-emerald-900 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[15px] text-emerald-700">public</span>
+                            <span>Live Web References:</span>
+                          </div>
+                          <div className="space-y-1">
+                            {msg.sources.filter((s) => s.type === 'web').map((webItem, wi) => (
+                              <div key={wi} className="text-emerald-950/85 pl-2 border-l-2 border-emerald-400">
+                                {webItem.url ? (
+                                  <a
+                                    href={webItem.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-semibold text-emerald-700 hover:underline flex items-center gap-1"
+                                  >
+                                    <span>{webItem.title}</span>
+                                    <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                                  </a>
+                                ) : (
+                                  <span className="font-semibold">{webItem.title}</span>
+                                )}
+                                {webItem.excerpt && (
+                                  <p className="text-[11px] text-emerald-800/80 mt-0.5">{webItem.excerpt}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -398,6 +501,49 @@ export const PatientAiAssistantPage: React.FC<PatientAiAssistantPageProps> = ({
                 {p.label}
               </button>
             ))}
+          </div>
+
+          {/* RAG Controls Toolbar (Upload Doc & Live Web Search) */}
+          <div className="px-4 py-2 bg-surface-container-low/70 border-t border-outline-variant/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleDocUpload}
+                accept=".pdf,.docx,.txt,.md"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingDoc}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-surface-container-lowest text-primary border border-outline-variant/30 hover:border-primary font-semibold transition-colors cursor-pointer text-xs"
+                title="Upload medical records, PDF, DOCX, or guidelines into RAG vector store"
+              >
+                <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                <span>{isUploadingDoc ? 'Chunking...' : 'Upload Doc to RAG'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setWebSearchEnabled((prev) => !prev)}
+                className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-xl font-semibold transition-colors cursor-pointer border text-xs ${
+                  webSearchEnabled
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : 'bg-surface-container-lowest text-on-surface-variant border-outline-variant/30'
+                }`}
+                title="Toggle live web search"
+              >
+                <span className="material-symbols-outlined text-[16px]">public</span>
+                <span>Live Web: {webSearchEnabled ? 'ON' : 'OFF'}</span>
+              </button>
+            </div>
+
+            {uploadFeedback && (
+              <span className="text-xs text-primary font-medium" title={uploadFeedback}>
+                {uploadFeedback}
+              </span>
+            )}
           </div>
 
           {/* Input Form */}

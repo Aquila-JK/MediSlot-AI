@@ -1,7 +1,16 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import multer from 'multer';
 import { GoogleGenAI, Type } from '@google/genai';
+import {
+  ingestDocument,
+  listDocuments,
+  deleteDocument,
+  searchKnowledgeBase,
+  liveWebSearch,
+  executeRagPipeline,
+} from './rag.ts';
 import {
   checkSupabaseHealth,
   dbAddScheduleSlot,
@@ -507,10 +516,97 @@ app.post('/api/prescriptions/:id/refill', async (req, res) => {
 });
 
 // ===========================================================================
-// AI Clinical Intelligence Endpoints (Powered by Gemini + Supabase Data)
+// RAG (Retrieval-Augmented Generation) Knowledge Base & Query API
 // ===========================================================================
 
-function generateFallbackClinicalResponse(message: string, userName: string, doctors: any[]) {
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB document upload limit
+});
+
+// Document Upload Endpoint (PDF, DOCX, TXT, MD)
+app.post('/api/rag/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ success: false, error: 'No document file uploaded. Please upload a PDF, DOCX, TXT, or MD file.' });
+      return;
+    }
+    const { originalname, buffer, mimetype } = req.file;
+    const ingested = await ingestDocument({
+      name: originalname,
+      buffer,
+      mimeType: mimetype || 'text/plain',
+    });
+    res.status(201).json({
+      success: true,
+      message: `Document "${originalname}" successfully chunked into ${ingested.chunkCount} vector embeddings.`,
+      document: ingested,
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to ingest document.';
+    console.error('RAG document upload error:', msg);
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+// Get List of Ingested Documents
+app.get('/api/rag/documents', (_req, res) => {
+  try {
+    const docs = listDocuments();
+    res.json({ success: true, count: docs.length, data: docs });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to fetch documents.';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+// Delete Document from Vector Knowledge Base
+app.delete('/api/rag/documents/:id', (req, res) => {
+  try {
+    const deleted = deleteDocument(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ success: false, error: 'Document not found.' });
+      return;
+    }
+    res.json({ success: true, message: 'Document removed from knowledge base.' });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to delete document.';
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+// Direct RAG Query Pipeline (Vector Retrieval + Live Search + LLM/RAG Synthesis)
+app.post('/api/rag/query', async (req, res) => {
+  try {
+    const { query, userName = 'Patient', conversationHistory = [], enableWebSearch = true } = req.body || {};
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      res.status(400).json({ success: false, error: 'Query text is required.' });
+      return;
+    }
+    const result = await executeRagPipeline({
+      query: query.trim(),
+      userName: String(userName),
+      conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
+      enableWebSearch: Boolean(enableWebSearch),
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'RAG query processing failed.';
+    console.error('RAG query error:', msg);
+    res.status(500).json({ success: false, error: msg });
+  }
+});
+
+// ===========================================================================
+// AI Clinical Intelligence Endpoints (Powered by Gemini + RAG + Supabase)
+// ===========================================================================
+
+function generateFallbackClinicalResponse(
+  message: string,
+  userName: string,
+  doctors: any[],
+  sources: any[] = []
+) {
   const lower = String(message || '').toLowerCase();
   let urgencyLevel = 'routine';
   let recommendedSpecialty = 'Cardiology';
@@ -544,16 +640,27 @@ function generateFallbackClinicalResponse(message: string, userName: string, doc
   }
 
   const primaryDoc = matchingDocs[0] || doctors[0];
-  let reply = `Thank you for consulting MediSlot AI, ${userName}. Based on your query regarding "${message.slice(0, 60).trim()}...", we recommend scheduling a clinical evaluation with ${primaryDoc?.name ? primaryDoc.name + ' (' + primaryDoc.specialty + ')' : 'one of our Pavilion B specialists'}.`;
+  let reply = `Thank you for consulting MediSlot AI, ${userName}. Regarding your inquiry:`;
+
+  const docSources = sources.filter((s) => s.type === 'document');
+  const webSources = sources.filter((s) => s.type === 'web');
+
+  if (docSources.length > 0) {
+    reply += `\n\n📄 **Knowledge Base Reference (${docSources[0].title}):**\n${docSources[0].excerpt}`;
+  } else if (webSources.length > 0) {
+    reply += `\n\n🌐 **Current Reference:**\n${webSources[0].excerpt}`;
+  } else {
+    reply += ` Based on your query regarding "${message.slice(0, 60).trim()}...", we recommend scheduling a clinical evaluation with ${primaryDoc?.name ? primaryDoc.name + ' (' + primaryDoc.specialty + ')' : 'one of our Pavilion B specialists'}.`;
+  }
 
   if (urgencyLevel === 'urgent_care') {
-    reply += ` 🚨 Immediate Medical Notice: If you are experiencing acute chest tightness, shortness of breath, or emergency symptoms, please call 911 or visit the nearest emergency department right away.`;
+    reply += `\n\n🚨 **Immediate Medical Notice:** If you are experiencing acute chest tightness, severe shortness of breath, or emergency symptoms, please call 911 or visit the nearest emergency department right away.`;
   } else {
-    reply += ` You can review available slots and book directly from the recommendation card below.`;
+    reply += `\n\nYou can review available slots and book directly from the recommendation card below.`;
   }
 
   return {
-    reply,
+    reply: reply.trim(),
     urgencyLevel,
     recommendedSpecialty: primaryDoc?.specialty || recommendedSpecialty,
     recommendedDoctorIds: matchingDocs.slice(0, 2).map((d: any) => d.id),
@@ -562,11 +669,12 @@ function generateFallbackClinicalResponse(message: string, userName: string, doc
       'List of current medications, dosages, and recent symptom log',
       'Any prior relevant ECG tracings or diagnostic reports',
     ],
+    sources,
   };
 }
 
 app.post('/api/ai/patient-concierge', async (req, res) => {
-  const { message, history = [], userName = 'Patient' } = req.body ?? {};
+  const { message, history = [], userName = 'Patient', enableWebSearch = true } = req.body ?? {};
   let doctors = req.body?.doctors;
 
   // If doctors list was not supplied by client, fetch active specialists from Supabase!
@@ -583,9 +691,46 @@ app.post('/api/ai/patient-concierge', async (req, res) => {
     return;
   }
 
+  // 1. Vector Search across RAG Knowledge Base
+  let relevantChunks: any[] = [];
+  try {
+    relevantChunks = await searchKnowledgeBase(message, 3, 0.20);
+  } catch {
+    relevantChunks = [];
+  }
+
+  // 2. Live Web Search if enabled
+  let webResults: any[] = [];
+  if (enableWebSearch) {
+    try {
+      webResults = await liveWebSearch(message);
+    } catch {
+      webResults = [];
+    }
+  }
+
+  // 3. Assemble Source Citations
+  const sources: any[] = [];
+  for (const item of relevantChunks) {
+    sources.push({
+      type: 'document',
+      title: `${item.chunk.documentName} (Section ${item.chunk.chunkIndex}/${item.chunk.totalChunks})`,
+      excerpt: item.chunk.text.slice(0, 180) + '...',
+      similarity: Math.round(item.similarity * 100) / 100,
+    });
+  }
+  for (const item of webResults) {
+    sources.push({
+      type: 'web',
+      title: item.title,
+      url: item.url,
+      excerpt: item.snippet.slice(0, 180) + '...',
+    });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
-    const fallback = generateFallbackClinicalResponse(message, userName, doctors);
+    const fallback = generateFallbackClinicalResponse(message, userName, doctors, sources);
     res.json(fallback);
     return;
   }
@@ -609,10 +754,24 @@ app.post('/api/ai/patient-concierge', async (req, res) => {
           .join('\n')
       : '';
 
+    const ragContext = relevantChunks
+      .map((c) => `[Source Document: ${c.chunk.documentName}]: ${c.chunk.text}`)
+      .join('\n\n');
+
+    const webContext = webResults
+      .map((w) => `[Live Web: ${w.title}] (${w.url}): ${w.snippet}`)
+      .join('\n\n');
+
     const prompt = `
 Patient Name: ${String(userName).slice(0, 80)}
 Available MediSlot Specialists (from Supabase directory):
 ${doctorContext || 'No specialist list provided.'}
+
+Retrieved Knowledge Base Documents:
+${ragContext || 'No matching local documents.'}
+
+Live Web Search Context:
+${webContext || 'No live web results.'}
 
 Recent Conversation:
 ${historyText}
@@ -626,14 +785,14 @@ ${message.trim().slice(0, 1500)}
       contents: prompt,
       config: {
         systemInstruction:
-          'You are MediSlot AI Clinical Concierge, a calm, authoritative medical triage and appointment routing assistant. Analyze symptoms or scheduling requests, provide concise clinical guidance (without diagnosing definitively), recommend 1 to 2 matching specialist IDs strictly from the provided Available MediSlot Specialists list when appropriate, suggest a short preparation checklist, and remind patients to call 911 for severe chest pain, breathing difficulty, or emergencies. Keep the reply under 160 words.',
+          'You are MediSlot AI Clinical Concierge, an intelligent, empathetic medical triage, RAG knowledge retrieval, and appointment routing assistant. Use retrieved documents and live web search context when relevant. Analyze symptoms or questions, provide clear and accurate clinical guidance (without diagnosing definitively), recommend 1 to 2 matching specialist IDs strictly from the Available MediSlot Specialists list when appropriate, suggest a short preparation checklist, and remind patients to call 911 for severe chest pain, breathing difficulty, or emergencies. Keep the reply concise (under 180 words).',
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             reply: {
               type: Type.STRING,
-              description: 'Concise, helpful clinical triage and scheduling guidance.',
+              description: 'Concise, helpful clinical triage and scheduling guidance referencing documents or web sources if applicable.',
             },
             urgencyLevel: {
               type: Type.STRING,
@@ -660,10 +819,15 @@ ${message.trim().slice(0, 1500)}
     });
 
     const parsed = JSON.parse((response.text ?? '{}').trim());
-    res.json(parsed);
+    res.json({
+      ...parsed,
+      sources,
+      usedKnowledgeBase: relevantChunks.length > 0,
+      usedWebSearch: webResults.length > 0,
+    });
   } catch (error) {
     console.warn('Gemini AI unavailable or rate-limited; returning clinical fallback triage:', error);
-    const fallback = generateFallbackClinicalResponse(message, userName, doctors);
+    const fallback = generateFallbackClinicalResponse(message, userName, doctors, sources);
     res.json(fallback);
   }
 });

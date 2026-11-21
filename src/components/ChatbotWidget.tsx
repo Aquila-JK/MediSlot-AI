@@ -10,6 +10,23 @@ interface ChatbotWidgetProps {
   onSelectDoctor?: (doctor: Doctor, slot?: string) => void;
 }
 
+interface RagSourceCitation {
+  type: 'document' | 'web';
+  title: string;
+  url?: string;
+  excerpt?: string;
+  similarity?: number;
+}
+
+interface IngestedDocMeta {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  chunkCount: number;
+  uploadedAt: string;
+}
+
 interface ChatMessage {
   id: string;
   sender: 'user' | 'bot';
@@ -18,6 +35,7 @@ interface ChatMessage {
   urgencyLevel?: 'routine' | 'priority' | 'urgent_care';
   recommendedDoctor?: Doctor;
   checklist?: string[];
+  sources?: RagSourceCitation[];
   suggestedActions?: { label: string; action: () => void }[];
 }
 
@@ -58,7 +76,12 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
     }
   };
 
-  const [activeTab, setActiveTab] = useState<'chat' | 'ticket' | 'info'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'knowledge' | 'ticket' | 'info'>('chat');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [knowledgeDocs, setKnowledgeDocs] = useState<IngestedDocMeta[]>([]);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [uploadFeedback, setUploadFeedback] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [input, setInput] = useState('');
@@ -76,12 +99,90 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
     {
       id: 'init-1',
       sender: 'bot',
-      text: `Hello ${userName}! I am MediSlot AI, your 24/7 intelligent health concierge and appointment coordinator. How can I help you today? You can describe any symptoms, search specialist doctors, or ask clinic questions.`,
+      text: `Hello ${userName}! I am MediSlot AI, your 24/7 intelligent health concierge and appointment coordinator powered by RAG and live web search. How can I help you today? You can describe symptoms, search specialist doctors, ask questions from our hospital knowledge base, or upload your own medical documents.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const loadKnowledgeDocs = async () => {
+    try {
+      const res = await fetch('/api/rag/documents');
+      if (res.ok) {
+        const data = await res.json();
+        setKnowledgeDocs(data.data || []);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      loadKnowledgeDocs();
+    }
+  }, [isOpen]);
+
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingDoc(true);
+    setUploadFeedback(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/rag/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      setUploadFeedback(`✅ Ingested "${file.name}" (${data.document?.chunkCount || 1} chunks) into RAG knowledge base.`);
+      loadKnowledgeDocs();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `sys-${Date.now()}`,
+          sender: 'bot',
+          text: `📄 **Document Added to Vector Knowledge Base:** "${file.name}" (${data.document?.chunkCount || 1} semantic chunks). You can now ask questions directly about this document!`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setUploadFeedback(`❌ Upload error: ${msg}`);
+    } finally {
+      setIsUploadingDoc(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteDoc = async (id: string, name: string) => {
+    try {
+      const res = await fetch(`/api/rag/documents/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setKnowledgeDocs((prev) => prev.filter((d) => d.id !== id));
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `sys-${Date.now()}`,
+            sender: 'bot',
+            text: `🗑️ Document "${name}" was removed from the vector knowledge base.`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -130,6 +231,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
         body: JSON.stringify({
           message: trimmed,
           userName,
+          enableWebSearch: webSearchEnabled,
           history: messages.slice(-5).map((m) => ({
             sender: m.sender === 'user' ? 'user' : 'concierge',
             text: m.text,
@@ -162,6 +264,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
         urgencyLevel: (data.urgencyLevel as 'routine' | 'priority' | 'urgent_care') || 'routine',
         recommendedDoctor: matchedDoctor,
         checklist: Array.isArray(data.checklist) ? data.checklist : undefined,
+        sources: Array.isArray(data.sources) ? data.sources : undefined,
       };
 
       setMessages((prev) => [...prev, botReply]);
@@ -372,7 +475,24 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">chat</span>
-              <span>AI Health Chat</span>
+              <span>AI Chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('knowledge')}
+              className={`flex-1 py-2.5 text-center flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                activeTab === 'knowledge'
+                  ? 'border-b-2 border-primary text-primary bg-surface-container-lowest font-bold'
+                  : 'text-on-surface-variant hover:text-primary'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">menu_book</span>
+              <span>RAG Docs</span>
+              {knowledgeDocs.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-secondary/15 text-secondary text-[9px] font-bold">
+                  {knowledgeDocs.length}
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -384,7 +504,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">support_agent</span>
-              <span>Human Coordinator</span>
+              <span>Coordinator</span>
             </button>
             <button
               type="button"
@@ -396,7 +516,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">local_hospital</span>
-              <span>Clinic &amp; Hours</span>
+              <span>Hours</span>
             </button>
           </div>
 
@@ -503,6 +623,66 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
                           </div>
                         </div>
                       )}
+
+                      {/* RAG Source Citations */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="w-full max-w-[92%] pl-9 pt-1 space-y-1.5">
+                          {msg.sources.some((s) => s.type === 'document') && (
+                            <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/70 text-[11px] space-y-1">
+                              <div className="font-bold text-blue-900 flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[14px] text-blue-700">description</span>
+                                <span>Retrieved Knowledge Base Sources:</span>
+                              </div>
+                              <div className="space-y-1">
+                                {msg.sources.filter((s) => s.type === 'document').map((docItem, di) => (
+                                  <div key={di} className="text-blue-950/85 pl-2 border-l-2 border-blue-400">
+                                    <span className="font-semibold">{docItem.title}</span>
+                                    {docItem.similarity !== undefined && (
+                                      <span className="ml-1 text-[10px] text-blue-700 font-mono">
+                                        ({Math.round(docItem.similarity * 100)}% match)
+                                      </span>
+                                    )}
+                                    {docItem.excerpt && (
+                                      <p className="text-[10px] text-blue-800/80 italic mt-0.5">{docItem.excerpt}</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {msg.sources.some((s) => s.type === 'web') && (
+                            <div className="p-2.5 rounded-xl bg-emerald-50/80 border border-emerald-200/70 text-[11px] space-y-1">
+                              <div className="font-bold text-emerald-900 flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-[14px] text-emerald-700">public</span>
+                                <span>Live Web Citations:</span>
+                              </div>
+                              <div className="space-y-1">
+                                {msg.sources.filter((s) => s.type === 'web').map((webItem, wi) => (
+                                  <div key={wi} className="text-emerald-950/85 pl-2 border-l-2 border-emerald-400">
+                                    {webItem.url ? (
+                                      <a
+                                        href={webItem.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="font-semibold text-emerald-700 hover:underline flex items-center gap-1"
+                                      >
+                                        <span>{webItem.title}</span>
+                                        <span className="material-symbols-outlined text-[12px]">open_in_new</span>
+                                      </a>
+                                    ) : (
+                                      <span className="font-semibold">{webItem.title}</span>
+                                    )}
+                                    {webItem.excerpt && (
+                                      <p className="text-[10px] text-emerald-800/80 mt-0.5">{webItem.excerpt}</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -510,7 +690,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
                 {isTyping && (
                   <div className="flex items-center gap-2 text-on-surface-variant text-[11px] italic pl-9">
                     <span className="w-2 h-2 rounded-full bg-primary animate-ping"></span>
-                    <span>MediSlot AI is evaluating clinical context and checking live doctor schedules...</span>
+                    <span>MediSlot AI is searching vector documents &amp; live web sources...</span>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
@@ -530,6 +710,49 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
                 ))}
               </div>
 
+              {/* RAG Controls Toolbar (Upload Doc & Web Search Toggle) */}
+              <div className="px-3 py-1.5 bg-surface-container-low/70 border-t border-outline-variant/20 flex items-center justify-between gap-2 text-[10px]">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleDocUpload}
+                    accept=".pdf,.docx,.txt,.md"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingDoc}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container-lowest text-primary border border-outline-variant/30 hover:border-primary font-semibold transition-colors cursor-pointer"
+                    title="Upload medical records, PDF, DOCX, or guidelines into RAG vector store"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">upload_file</span>
+                    <span>{isUploadingDoc ? 'Chunking...' : 'Upload Doc to RAG'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setWebSearchEnabled((prev) => !prev)}
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-semibold transition-colors cursor-pointer border ${
+                      webSearchEnabled
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-surface-container-lowest text-on-surface-variant border-outline-variant/30'
+                    }`}
+                    title="Toggle live web search"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">public</span>
+                    <span>Live Web: {webSearchEnabled ? 'ON' : 'OFF'}</span>
+                  </button>
+                </div>
+
+                {uploadFeedback && (
+                  <span className="truncate max-w-[150px] text-[10px] text-primary font-medium" title={uploadFeedback}>
+                    {uploadFeedback}
+                  </span>
+                )}
+              </div>
+
               {/* Chat Input */}
               <form
                 onSubmit={(e) => {
@@ -542,7 +765,7 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask MediSlot AI about symptoms, doctors, refills, or hours..."
+                  placeholder="Ask MediSlot AI with RAG retrieval & live web search..."
                   className="flex-1 px-4 py-2.5 text-xs bg-surface-container-low rounded-xl border border-outline-variant/30 outline-none focus:border-primary text-on-surface"
                 />
                 <button
@@ -553,6 +776,112 @@ export const ChatbotWidget: React.FC<ChatbotWidgetProps> = ({
                   <span className="material-symbols-outlined text-[18px]">send</span>
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* TAB: Knowledge Base (RAG) */}
+          {activeTab === 'knowledge' && (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs bg-surface">
+              <div className="p-4 rounded-2xl bg-surface-container-lowest border border-outline-variant/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-primary text-sm flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[20px] text-secondary">database</span>
+                      <span>Vector Knowledge Base (RAG)</span>
+                    </h3>
+                    <p className="text-[11px] text-on-surface-variant mt-0.5">
+                      Ingested clinical documents converted into semantic vector embeddings for intelligent retrieval.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingDoc}
+                    className="px-3 py-1.5 rounded-xl bg-primary text-on-primary text-xs font-bold hover:bg-primary-container transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                    <span>{isUploadingDoc ? 'Processing...' : 'Upload Document'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-center">
+                  <div className="p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/20">
+                    <span className="block text-lg font-bold text-primary">{knowledgeDocs.length}</span>
+                    <span className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">Indexed Docs</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/20">
+                    <span className="block text-lg font-bold text-secondary">
+                      {knowledgeDocs.reduce((acc, d) => acc + (d.chunkCount || 0), 0)}
+                    </span>
+                    <span className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">Vector Chunks</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/20 col-span-2 sm:col-span-1">
+                    <span className="block text-lg font-bold text-emerald-600">Cosine</span>
+                    <span className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">Similarity Metric</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Ingested Documents List */}
+              <div className="space-y-2">
+                <h4 className="text-[11px] font-bold uppercase tracking-wider text-secondary px-1">
+                  Active Knowledge Base Documents
+                </h4>
+                {knowledgeDocs.length === 0 ? (
+                  <div className="p-6 text-center text-on-surface-variant bg-surface-container-lowest rounded-2xl border border-dashed border-outline-variant/40">
+                    <span className="material-symbols-outlined text-[32px] opacity-40 mb-1">folder_open</span>
+                    <p className="text-xs">No documents uploaded yet.</p>
+                    <p className="text-[10px] text-on-surface-variant/70 mt-1">
+                      Upload PDF, DOCX, or TXT medical guidelines to begin retrieval-augmented answers.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {knowledgeDocs.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="p-3 rounded-2xl bg-surface-container-lowest border border-outline-variant/30 flex items-center justify-between gap-3 shadow-2xs"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-xl bg-secondary/15 text-secondary flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-[18px]">description</span>
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-primary text-xs truncate" title={doc.name}>
+                              {doc.name}
+                            </p>
+                            <p className="text-[10px] text-on-surface-variant">
+                              {doc.chunkCount} vector chunks • {(doc.sizeBytes / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveTab('chat');
+                              handleSendMessage(`What information is available in ${doc.name}?`);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary text-[10px] font-bold transition-colors cursor-pointer"
+                            title="Query this document in chat"
+                          >
+                            Ask About This
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDoc(doc.id, doc.name)}
+                            className="p-1 rounded-lg text-error hover:bg-error-container/30 transition-colors cursor-pointer"
+                            title="Delete document"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

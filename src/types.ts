@@ -214,6 +214,14 @@ export interface AiSession {
   updatedAt?: unknown;
 }
 
+export interface RagSource {
+  type: 'document' | 'web';
+  title: string;
+  url?: string;
+  excerpt?: string;
+  similarity?: number;
+}
+
 export interface AiMessage {
   id: string;
   sessionId: string;
@@ -221,5 +229,6 @@ export interface AiMessage {
   sender: 'user' | 'assistant';
   text: string;
   recommendedDoctorIds?: string[];
+  sources?: RagSource[];
   createdAt?: unknown;
 }

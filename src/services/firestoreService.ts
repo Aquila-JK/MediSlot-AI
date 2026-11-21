@@ -28,6 +28,7 @@ import {
   PatientRecord,
   PortalMode,
   Prescription,
+  RagSource,
   sanitizeId,
   ScheduleSlot,
   UserPrivateInfo,
@@ -1285,6 +1286,7 @@ export async function appendAiMessage(params: {
   sender: 'user' | 'assistant';
   text: string;
   recommendedDoctorIds?: string[];
+  sources?: RagSource[];
 }): Promise<void> {
   const safeSessionId = sanitizeId(params.sessionId);
   const safeUid = sanitizeId(params.ownerUid);
@@ -1301,6 +1303,9 @@ export async function appendAiMessage(params: {
     baseMsg.recommendedDoctorIds = params.recommendedDoctorIds
       .slice(0, BLUEPRINT_LIMITS.REC_DOCS_MAX)
       .map((id) => sanitizeId(id));
+  }
+  if (params.sources && params.sources.length > 0) {
+    baseMsg.sources = params.sources;
   }
 
   if (!useFirebaseMode()) {
